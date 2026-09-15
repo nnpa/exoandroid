@@ -5,39 +5,49 @@ import java.util.Properties;
 
 public class SettingsManager {
     private static final String SETTINGS_FILE = "settings.properties";
-    
+
     private int screenWidth = 1280;
     private int screenHeight = 720;
     private float soundVolume = 0.5f; // 0..1
-    private String language = "en";   // "en" или "ru"
+
+    /*
+     * Язык по умолчанию — русский.
+     * Раньше было "en": при первом запуске SettingsManager.save()
+     * записывал "en" в settings.properties, после чего
+     * UIManager.applyStoredLanguage() грузил английскую локаль,
+     * несмотря на то что LocalizationManager.currentLanguage = "ru".
+     */
+    private String language = "ru";
+
     private boolean hideControlsHelp = false;
-    
+
     private static SettingsManager instance;
-    
+
     private SettingsManager() {
         load();
     }
-    
+
     public static SettingsManager getInstance() {
         if (instance == null) instance = new SettingsManager();
         return instance;
     }
-    
-public void load() {
-    Properties props = new Properties();
-    try (InputStream in = new FileInputStream(SETTINGS_FILE)) {
-        props.load(in);
-        screenWidth = Integer.parseInt(props.getProperty("screenWidth", "1280"));
-        screenHeight = Integer.parseInt(props.getProperty("screenHeight", "720"));
-        soundVolume = Float.parseFloat(props.getProperty("soundVolume", "0.5"));
-        language = props.getProperty("language", "en"); // по умолчанию английский
-        hideControlsHelp = Boolean.parseBoolean(props.getProperty("hideControlsHelp", "false"));
-    } catch (IOException e) {
-        // Файла нет – сохраняем дефолтные настройки
-        save();
+
+    public void load() {
+        Properties props = new Properties();
+        try (InputStream in = new FileInputStream(SETTINGS_FILE)) {
+            props.load(in);
+            screenWidth = Integer.parseInt(props.getProperty("screenWidth", "1280"));
+            screenHeight = Integer.parseInt(props.getProperty("screenHeight", "720"));
+            soundVolume = Float.parseFloat(props.getProperty("soundVolume", "0.5"));
+            // Дефолт тоже "ru" — если файл существует, но ключа нет.
+            language = props.getProperty("language", "ru");
+            hideControlsHelp = Boolean.parseBoolean(props.getProperty("hideControlsHelp", "false"));
+        } catch (IOException e) {
+            // Файла нет – сохраняем дефолтные настройки (с "ru")
+            save();
+        }
     }
-}
-    
+
     public void save() {
         Properties props = new Properties();
         props.setProperty("screenWidth", String.valueOf(screenWidth));
@@ -51,16 +61,15 @@ public void load() {
             e.printStackTrace();
         }
     }
-    
+
     // Геттеры и сеттеры с автоматическим сохранением
     public int getScreenWidth() { return screenWidth; }
     public void setScreenWidth(int w) { screenWidth = w; save(); }
     public int getScreenHeight() { return screenHeight; }
     public void setScreenHeight(int h) { screenHeight = h; save(); }
     public float getSoundVolume() { return soundVolume; }
-    public void setSoundVolume(float v) { 
-        soundVolume = v; save(); 
-        
+    public void setSoundVolume(float v) {
+        soundVolume = v; save();
     }
     public String getLanguage() { return language; }
     public void setLanguage(String lang) { language = lang; save(); }

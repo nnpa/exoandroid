@@ -326,31 +326,37 @@ public class SettingsWindow implements RawInputListener {
         // X
         // =========================================================
 
-        Button closeButton =
-                createButton(
-                        "X",
-                        14f
-                );
-
-        closeButton.setPreferredSize(
-                new Vector3f(
-                        25f * scale,
-                        25f * scale,
-                        0f
-                )
+Button closeButton =
+        createButton(
+                getLocalized("ui.close_button"),
+                14f
         );
 
-        closeButton.setLocalTranslation(
-                winW - 35f * scale,
-                winH - 30f * scale,
-                0.1f
-        );
+closeButton.setColor(ColorRGBA.White);
+closeButton.setBackground(
+        new com.simsilica.lemur.component.QuadBackgroundComponent(
+                new ColorRGBA(0f, 0f, 0f, 0f)   // прозрачный фон
+        ));
 
-        bindTouchAction(closeButton, () -> hide());
+closeButton.setPreferredSize(
+        new Vector3f(
+                100f * scale,
+                30f * scale,
+                0f
+        )
+);
 
-        windowNode.attachChild(
-                closeButton
-        );
+closeButton.setLocalTranslation(
+        winW - 110f * scale,
+        winH - 35f * scale,
+        0.1f
+);
+
+bindTouchAction(closeButton, () -> hide());
+
+windowNode.attachChild(
+        closeButton
+);
 
         // =========================================================
         // НАЧАЛЬНАЯ ПОЗИЦИЯ

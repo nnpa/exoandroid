@@ -30,7 +30,7 @@ public class InventoryManager {
     private static final float FONT_MULT = 2f;
     private static final float DRAG_THRESHOLD = 30f;
     private static final float DRAG_CURSOR_SIZE = 55f;
-    
+
     private SimpleApplication app;
     private Node guiNode;
     private Node inventoryNode;
@@ -39,15 +39,15 @@ public class InventoryManager {
     private Label tooltipLabel;
     private UIManager uiManager;
     private NetworkManager networkManager;
-    
+
     private Item[] inventoryItems = new Item[20];
     private Item[] equipment = new Item[7];
-    
+
     private float currentScreenWidth = 1280;
     private float currentScreenHeight = 720;
     private float scale = 1f;
     private boolean isProcessing = false;
-    
+
     private int draggedInventorySlot = -1;
     private boolean isDraggingItem = false;
     private float dragStartX, dragStartY;
@@ -58,18 +58,18 @@ public class InventoryManager {
     private float[] cellSizeArr = new float[20];
     private Picture dragCursorPicture;
     private float lastMouseX, lastMouseY;
-    
+
     // Tap-to-select logic для Android
     private int selectedInventorySlot = -1;
-    
+
     private static final String[] EMPTY_SLOT_ICONS = {
-        "Interface/Icons/empty_helmet.png",
-        "Interface/Icons/empty_armor.png",
-        "Interface/Icons/empty_weapon.png",
-        "Interface/Icons/empty_shield.png",
-        "Interface/Icons/empty_legs.png",
-        "Interface/Icons/empty_boots.png",
-        "Interface/Icons/empty_gloves.png"
+            "Interface/Icons/empty_helmet.png",
+            "Interface/Icons/empty_armor.png",
+            "Interface/Icons/empty_weapon.png",
+            "Interface/Icons/empty_shield.png",
+            "Interface/Icons/empty_legs.png",
+            "Interface/Icons/empty_boots.png",
+            "Interface/Icons/empty_gloves.png"
     };
 
     public InventoryManager(SimpleApplication app, Node guiNode) {
@@ -77,7 +77,7 @@ public class InventoryManager {
         this.guiNode = guiNode;
         Main main = (Main) app;
         if (main != null) this.networkManager = main.getNetworkManager();
-        
+
         inventoryNode = new Node("InventoryNode");
         inventoryNode.setName("InventoryNode");
         updateScreenSize();
@@ -122,7 +122,7 @@ public class InventoryManager {
         removeDragCursor();
         draggedInventorySlot = -1;
         isDraggingItem = false;
-        
+
         if (dragging) {
             if (!isInsideInventoryWindow(x, y)) dropInventoryItem(slot);
         } else {
@@ -155,7 +155,7 @@ public class InventoryManager {
         if (slotIndex < 0 || slotIndex >= inventoryItems.length) return;
         Item item = inventoryItems[slotIndex];
         if (item == null || "Gem".equals(item.getType())) return;
-        
+
         if (networkManager != null) {
             isProcessing = true;
             networkManager.equipItem(slotIndex).thenAccept(response -> {
@@ -237,7 +237,7 @@ public class InventoryManager {
         Arrays.fill(inventoryItems, null);
         Arrays.fill(equipment, null);
         if (inventoryData == null || inventoryData.isEmpty()) { updateUI(); return; }
-        
+
         for (Map<String, Object> data : inventoryData) {
             try {
                 int slot = -1;
@@ -246,26 +246,26 @@ public class InventoryManager {
                 else if (slotObj instanceof String) {
                     try { slot = Integer.parseInt((String) slotObj); } catch (NumberFormatException ignored) {}
                 }
-                
+
                 boolean equipped = false;
                 Object eqObj = data.get("equipped");
                 if (eqObj instanceof Boolean) equipped = (Boolean) eqObj;
                 else if (eqObj instanceof String) equipped = Boolean.parseBoolean((String) eqObj);
                 else if (eqObj instanceof Number) equipped = ((Number) eqObj).intValue() != 0;
-                
+
                 String equippedSlot = null;
                 Object eqSlotObj = data.get("equipped_slot");
                 if (eqSlotObj == null) eqSlotObj = data.get("equippedSlot");
                 if (eqSlotObj != null) equippedSlot = eqSlotObj.toString();
-                
+
                 Object itemMapObj = data.get("item");
                 if (!(itemMapObj instanceof Map)) continue;
-                
+
                 @SuppressWarnings("unchecked")
                 Map<String, Object> itemMap = (Map<String, Object>) itemMapObj;
                 Item item = Item.fromMap(itemMap);
                 if (item == null) continue;
-                
+
                 if (equipped) {
                     int equipIndex = getEquipIndexBySlot(equippedSlot);
                     if (equipIndex != -1 && equipIndex < equipment.length) equipment[equipIndex] = item;
@@ -338,38 +338,57 @@ public class InventoryManager {
     private void createUI(float screenWidth, float screenHeight) {
         inventoryNode.detachAllChildren();
         uiElements.clear();
-        
+
+        // ============================================================
+        // ВЫСОТА ПАНЕЛЕЙ = 450 * scale (как в оригинале).
+        // Кнопки «Закрыть» уменьшены до 100x36 и посажены вплотную
+        // к верхнему правому углу (отступы 4 сверху, 8 справа),
+        // поэтому слоты/сетка остаются на прежних местах, а не
+        // уезжают вниз.
+        // ============================================================
         float eqWidth = 250 * scale, eqHeight = 450 * scale;
         float invWidth = 400 * scale, invHeight = 450 * scale;
         inventoryWindowWidth = invWidth;
         inventoryWindowHeight = invHeight;
-        
+
         float spacing = 30 * scale;
         float totalWidth = eqWidth + spacing + invWidth;
         float startX = (screenWidth - totalWidth) / 2;
         float startY = (screenHeight - (eqHeight + invHeight) / 2) / 2 - 100 * scale;
         float slotSize = 60 * scale;
         float shiftDown = slotSize;
-        
+
         float eqX = startX, eqY = startY + 100 * scale;
         float invX = startX + eqWidth + spacing, invY = startY + 50 * scale;
         inventoryWindowX = invX;
         inventoryWindowY = invY;
-        
+
         if (uiManager != null) {
             Geometry eqBg = uiManager.createBackgroundGeometry(eqWidth, eqHeight);
             eqBg.setLocalTranslation(eqX, eqY, -1f);
             eqBg.setUserData("pickable", false);
             inventoryNode.attachChild(eqBg);
             uiElements.add(eqBg);
-            
+
             Geometry invBg = uiManager.createBackgroundGeometry(invWidth, invHeight);
             invBg.setLocalTranslation(invX, invY, -1f);
             invBg.setUserData("pickable", false);
             inventoryNode.attachChild(invBg);
             uiElements.add(invBg);
         }
-        
+
+        // ============================================================
+        // РАЗМЕРЫ И ПОЛОЖЕНИЕ КНОПОК ЗАКРЫТИЯ
+        // Определены ДО сетки, чтобы её верх можно было привязать
+        // ровно под кнопкой.
+        // ============================================================
+        float closeBtnW = 100 * scale;
+        float closeBtnH = 36 * scale;
+        float closeBtnTopMargin = 4 * scale;
+        float closeBtnRightMargin = 8 * scale;
+        float gapCloseToGrid = 5 * scale;
+
+        // Слоты экипировки — на прежних местах
         float offsetY = 70 * scale;
         createSlotGeometry(eqX + 95 * scale, eqY + 320 * scale + offsetY - shiftDown, 0, slotSize);
         createSlotGeometry(eqX + 160 * scale, eqY + 250 * scale + offsetY - shiftDown, 2, slotSize);
@@ -378,23 +397,38 @@ public class InventoryManager {
         createSlotGeometry(eqX + 95 * scale, eqY + 110 * scale + offsetY - shiftDown, 4, slotSize);
         createSlotGeometry(eqX + 95 * scale, eqY + 40 * scale + offsetY - shiftDown, 5, slotSize);
         createSlotGeometry(eqX + 30 * scale, eqY + 110 * scale + offsetY - shiftDown, 6, slotSize);
-        
+
+        // Кнопка закрытия экипировки — верхний правый угол панели
         Button closeEq = new Button(getLocalized("ui.close_button"));
-        closeEq.setPreferredSize(new Vector3f(180 * scale, 50 * scale, 0));
-        closeEq.setFontSize(20 * scale);
+        closeEq.setFontSize(16 * scale);
         closeEq.setColor(ColorRGBA.White);
-        closeEq.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.3f, 0.3f, 0.3f, 0.8f)));
-        closeEq.setLocalTranslation(eqX + eqWidth - 200 * scale, eqY + eqHeight - 60 * scale - shiftDown, 0);
+        closeEq.setBackground(new QuadBackgroundComponent(new ColorRGBA(0f, 0f, 0f, 0f)));
+        closeEq.setPreferredSize(new Vector3f(closeBtnW, closeBtnH, 0));
+        closeEq.setLocalTranslation(
+                eqX + eqWidth - closeBtnW - closeBtnRightMargin,
+                eqY + eqHeight - closeBtnH - closeBtnTopMargin,
+                0);
         closeEq.addClickCommands(s -> hide());
         inventoryNode.attachChild(closeEq);
         uiElements.add(closeEq);
-        
+
+        // ============================================================
+        // СЕТКА ИНВЕНТАРЯ — привязана к ВЕРХУ панели.
+        // Верхний ряд сетки идёт ровно под кнопкой «Закрыть»,
+        // поэтому при любой высоте панели слоты остаются наверху
+        // и не уезжают вниз.
+        // ============================================================
         float cellSize = 55 * scale;
         float spacingCell = 8 * scale;
-        float paddingLeft = 40 * scale, paddingTop = 40 * scale;
+        float paddingLeft = 40 * scale;
+
         float startXCell = invX + paddingLeft;
-        float startYCell = invY + invHeight - paddingTop - 50 * scale;
-        
+        float startYCell = invY + invHeight
+                - closeBtnTopMargin
+                - closeBtnH
+                - gapCloseToGrid
+                - cellSize;
+
         for (int i = 0; i < 20; i++) {
             int col = i % 4;
             int row = i / 4;
@@ -403,13 +437,13 @@ public class InventoryManager {
             cellX[i] = x;
             cellY[i] = y;
             cellSizeArr[i] = cellSize;
-            
+
             Geometry cell = new Geometry("InvCell_" + i, new Quad(cellSize, cellSize));
             cell.setLocalTranslation(x, y, 1f);
-            
+
             Material cellMat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
             Item item = inventoryItems[i];
-            
+
             if (item != null) {
                 Texture tex = null;
                 try { tex = app.getAssetManager().loadTexture(item.getIconPath()); } catch (Exception ignored) {}
@@ -419,7 +453,7 @@ public class InventoryManager {
                 cellMat.setColor("Color", new ColorRGBA(0.2f, 0.2f, 0.3f, 0.9f));
             }
             cell.setMaterial(cellMat);
-            
+
             if (i == selectedInventorySlot) {
                 Geometry highlight = new Geometry("InvCellHighlight_" + i, new Quad(cellSize + 4, cellSize + 4));
                 highlight.setLocalTranslation(x - 2, y - 2, 0.9f);
@@ -429,7 +463,7 @@ public class InventoryManager {
                 inventoryNode.attachChild(highlight);
                 uiElements.add(highlight);
             }
-            
+
             final int slotIdx = i;
             MouseEventControl.addListenersToSpatial(cell, new MouseListener() {
                 @Override public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
@@ -441,22 +475,26 @@ public class InventoryManager {
                 @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
                 @Override public void mouseMoved(MouseMotionEvent evt, Spatial s, Spatial t) {}
             });
-            
+
             addTooltipListener(cell, i, true);
             inventoryNode.attachChild(cell);
             uiElements.add(cell);
         }
-        
+
+        // Кнопка закрытия инвентаря — верхний правый угол панели
         Button closeInv = new Button(getLocalized("ui.close_button"));
-        closeInv.setPreferredSize(new Vector3f(180 * scale, 50 * scale, 0));
-        closeInv.setFontSize(20 * scale);
+        closeInv.setFontSize(16 * scale);
         closeInv.setColor(ColorRGBA.White);
-        closeInv.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.3f, 0.3f, 0.3f, 0.8f)));
-        closeInv.setLocalTranslation(invX + invWidth - 200 * scale, invY + invHeight - 60 * scale, 0);
+        closeInv.setBackground(new QuadBackgroundComponent(new ColorRGBA(0f, 0f, 0f, 0f)));
+        closeInv.setPreferredSize(new Vector3f(closeBtnW, closeBtnH, 0));
+        closeInv.setLocalTranslation(
+                invX + invWidth - closeBtnW - closeBtnRightMargin,
+                invY + invHeight - closeBtnH - closeBtnTopMargin,
+                0);
         closeInv.addClickCommands(s -> hide());
         inventoryNode.attachChild(closeInv);
         uiElements.add(closeInv);
-        
+
         tooltipLabel = new Label("");
         tooltipLabel.setFontSize(14 * scale * FONT_MULT);
         tooltipLabel.setColor(ColorRGBA.White);
@@ -472,7 +510,7 @@ public class InventoryManager {
         Quad quad = new Quad(slotSize, slotSize);
         Geometry geo = new Geometry("slotGeo_" + slotIndex, quad);
         geo.setLocalTranslation(x, y, 1f);
-        
+
         Material mat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
         if (equipment[slotIndex] != null) {
             Item item = equipment[slotIndex];
@@ -487,7 +525,7 @@ public class InventoryManager {
             else mat.setColor("Color", new ColorRGBA(0.2f, 0.2f, 0.3f, 0.9f));
         }
         geo.setMaterial(mat);
-        
+
         final int idx = slotIndex;
         MouseEventControl.addListenersToSpatial(geo, new MouseListener() {
             @Override public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
@@ -577,14 +615,14 @@ public class InventoryManager {
 
     private boolean isInsideInventoryWindow(float mouseX, float mouseY) {
         return mouseX >= inventoryWindowX && mouseX <= inventoryWindowX + inventoryWindowWidth
-            && mouseY >= inventoryWindowY && mouseY <= inventoryWindowY + inventoryWindowHeight;
+                && mouseY >= inventoryWindowY && mouseY <= inventoryWindowY + inventoryWindowHeight;
     }
 
     private void dropInventoryItem(int slotIndex) {
         if (!isVisible || slotIndex < 0 || slotIndex >= inventoryItems.length) return;
         Item item = inventoryItems[slotIndex];
         if (item == null || isProcessing) return;
-        
+
         if (networkManager == null) {
             inventoryItems[slotIndex] = null;
             updateUI();
@@ -614,7 +652,7 @@ public class InventoryManager {
         if (equipment[slotIndex] == null) return;
         String slotName = getSlotName(slotIndex);
         if (slotName == null) return;
-        
+
         if (networkManager != null) {
             isProcessing = true;
             networkManager.unequipItem(slotName).thenAccept(response -> {
@@ -667,7 +705,7 @@ public class InventoryManager {
         inventoryNode.setLocalScale(1f, 1f, 1f);
         inventoryNode.setLocalTranslation(0, 0, 0);
         inventoryNode.setCullHint(visible ? Node.CullHint.Dynamic : Node.CullHint.Always);
-        
+
         if (visible) {
             if (guiNode.hasChild(inventoryNode)) guiNode.detachChild(inventoryNode);
             guiNode.attachChild(inventoryNode);
@@ -680,11 +718,11 @@ public class InventoryManager {
         if (!visible && tooltipLabel != null) tooltipLabel.setCullHint(Node.CullHint.Always);
     }
 
-public void show() {
-    setVisible(true);
-    SoundManager.playSound(SoundManager.SOUND_WINDOW_TALENTS);
-    requestInventoryRefresh();
-}   
+    public void show() {
+        setVisible(true);
+        SoundManager.playSound(SoundManager.SOUND_WINDOW_TALENTS);
+        requestInventoryRefresh();
+    }
     public void hide() { removeDragCursor(); draggedInventorySlot = -1; isDraggingItem = false; selectedInventorySlot = -1; SoundManager.playSound(SoundManager.SOUND_WINDOW_CLOSE); setVisible(false); }
     public void toggleVisibility() { if (isVisible) hide(); else show(); }
 

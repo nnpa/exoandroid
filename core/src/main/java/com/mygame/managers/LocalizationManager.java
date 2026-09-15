@@ -10,10 +10,8 @@ public class LocalizationManager {
     private static LocalizationManager instance;
 
     /*
-     * Язык по умолчанию — русский.
-     * Раньше было "en": при первом запуске (до того, как
-     * SettingsManager сохранит выбор игрока) подгружался
-     * английский. Теперь по умолчанию — "ru".
+     * Язык по умолчанию — русский. SettingsManager тоже пишет
+     * "ru" по умолчанию, поэтому оба источника согласованы.
      */
     private String currentLanguage = "ru";
 
@@ -27,7 +25,6 @@ public class LocalizationManager {
     }
 
     public void init(AssetManager assetManager) {
-        // assetManager не используется, можно убрать параметр, или сохранить для других целей
         loadLanguage(currentLanguage);
     }
 
@@ -38,8 +35,9 @@ public class LocalizationManager {
         try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(path)) {
             if (in == null) {
                 System.err.println("Resource not found: " + path);
-                if (!lang.equals("en")) {
-                    loadLanguage("en");
+                // Фолбэк — русский, а не английский
+                if (!"ru".equals(lang)) {
+                    loadLanguage("ru");
                 }
                 return;
             }
@@ -50,8 +48,8 @@ public class LocalizationManager {
             }
         } catch (Exception e) {
             System.err.println("Failed to load locale: " + path);
-            if (!lang.equals("en")) {
-                loadLanguage("en");
+            if (!"ru".equals(lang)) {
+                loadLanguage("ru");
             }
         }
     }

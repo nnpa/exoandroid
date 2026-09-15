@@ -131,27 +131,49 @@ public class TalentWindow {
         });
     }
 
-    private void createTooltip() {
-        tooltipLabel = new Label("");
+private void createTooltip() {
+    tooltipLabel = new Label("");
 
-        // Шрифт ×2 (как в остальных окнах).
-        tooltipLabel.setFontSize(14 * FONT_MULT);
-        tooltipLabel.setColor(ColorRGBA.White);
-        tooltipLabel.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.1f, 0.1f, 0.2f, 0.95f)));
+    // Шрифт ×2 (как в остальных окнах).
+    tooltipLabel.setFontSize(14 * FONT_MULT);
+    tooltipLabel.setColor(ColorRGBA.White);
+    tooltipLabel.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.1f, 0.1f, 0.2f, 0.95f)));
 
-        // Под увеличенный шрифт нужно больше места.
-        tooltipLabel.setPreferredSize(new Vector3f(600, 160, 0));
+    // Под увеличенный шрифт нужно больше места.
+    tooltipLabel.setPreferredSize(new Vector3f(600, 160, 0));
 
-        tooltipLabel.setLocalTranslation(
-                10,
-                app.getCamera().getHeight() - 170,
-                0
-        );
+    // ============================================================
+    // ТУЛТИП ОПУЩЕН НИЖЕ ПАНЕЛИ СТАТОВ (ник/HP/MP).
+    //
+    // Панель статов живёт в UIManager в левом верхнем углу
+    // и занимает примерно [screenHeight − 110*scale,
+    //                       screenHeight − 30*scale].
+    //
+    // Раньше тултип стартовал на Y = screenHeight − 170
+    // и на некоторых разрешениях заезжал на статы.
+    //
+    // Теперь он стартует на Y = screenHeight − 340 — с
+    // гарантированным запасом ниже статов при любом scale
+    // (0.5 … 1.5). На узких экранах Y дополнительно
+    // ограничен сверху, чтобы тултип не уехал в самый низ
+    // окна талантов.
+    // ============================================================
+    float screenHeight = app.getCamera().getHeight();
+    float tooltipTopY = screenHeight - 340f;
 
-        tooltipLabel.setCullHint(Node.CullHint.Always);
-        app.getGuiNode().attachChild(tooltipLabel);
+    // Страховка: не ниже, чем «верх окна талантов − 20».
+    // Окно талантов центрируется по вертикали, его верх
+    // примерно на (screenHeight + 550*scale) / 2 — возьмём
+    // 550 * 1.0 как верхнюю границу.
+    float minAllowedY = (screenHeight + 550f) / 2f - 20f;
+    if (tooltipTopY < minAllowedY) {
+        tooltipTopY = minAllowedY;
     }
 
+    tooltipLabel.setLocalTranslation(10, tooltipTopY, 0);
+    tooltipLabel.setCullHint(Node.CullHint.Always);
+    app.getGuiNode().attachChild(tooltipLabel);
+}
     private void createWindow() {
         float screenWidth = app.getCamera().getWidth();
         float screenHeight = app.getCamera().getHeight();
@@ -274,7 +296,7 @@ public class TalentWindow {
         closeButton.setFontSize(22 * scale);
         closeButton.setColor(ColorRGBA.White);
         closeButton.setLocalTranslation(
-                currentWidth - 200 * scale,
+                currentWidth - 170 * scale,
                 currentHeight - 60 * scale,
                 0.1f);
         bindTouchAction(closeButton, () -> hide());

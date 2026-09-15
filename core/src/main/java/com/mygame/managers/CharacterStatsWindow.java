@@ -226,7 +226,7 @@ public class CharacterStatsWindow {
         // Стало: 180×50, шрифт 22*scale, DOWN-обработчик.
         // ============================================================
 
-        Button closeButton = createButton("ЗАКРЫТЬ", 22f);
+        Button closeButton = createButton(getLocalized("ui.close_button"), 22f);
         closeButton.setPreferredSize(new Vector3f(180f * scale, 50f * scale, 0f));
         closeButton.setLocalTranslation(
                 winW / 2f - 90f * scale,

@@ -47,8 +47,17 @@ public class TraderWindow {
     public Node getNode() { return windowNode; }
     private String getLocalized(String key) { return LocalizationManager.getInstance().get(key); }
 
+    // ============================================================
+    // ПРОЗРАЧНЫЙ ФОН КНОПОК
+    //
+    // Раньше здесь был серый QuadBackgroundComponent
+    // (0.3, 0.3, 0.3, 0.8) — именно он давал «большой серый
+    // квадрат» под каждой кнопкой. Теперь фон полностью
+    // прозрачный, но область клика сохраняется (Lemur считает
+    // её по background, поэтому null ставить нельзя).
+    // ============================================================
     private void applyBtnBackground(Button btn) {
-        btn.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.3f, 0.3f, 0.3f, 0.8f)));
+        btn.setBackground(new QuadBackgroundComponent(new ColorRGBA(0f, 0f, 0f, 0f)));
     }
 
     private void updateScale() {
@@ -103,6 +112,7 @@ public class TraderWindow {
         goldLabel.setLocalTranslation(20 * scale + leftShift, windowHeight - 115 * scale, 0.1f);
         windowNode.attachChild(goldLabel);
 
+        // Вкладки Buy / Sell
         Button buyTab = new Button(getLocalized("trader.tab.buy"));
         buyTab.setPreferredSize(new Vector3f(130 * scale, 50 * scale, 0));
         buyTab.setFontSize(22 * scale);
@@ -121,8 +131,21 @@ public class TraderWindow {
         sellTab.addCommands(Button.ButtonAction.Down, s -> showSellTab());
         windowNode.attachChild(sellTab);
 
+        // ============================================================
+        // contentNode смещён НИЖЕ вкладок. Заголовки контента
+        // (Buy Items / Sell Items) и строки товаров начинаются
+        // под Y вкладок, а не наезжают на них.
+        //
+        // Было: contentNode на (20+leftShift, 20*scale),
+        //       header внутри — на 320*scale → абсолют Y ≈ 340,
+        //       вкладки — на 355 → наезд.
+        //
+        // Стало: contentNode на (20+leftShift, -70*scale),
+        //        header внутри всё ещё на 320*scale →
+        //        абсолют Y ≈ 250, запас до вкладок — 55*scale.
+        // ============================================================
         contentNode = new Node("ContentNode");
-        contentNode.setLocalTranslation(20 * scale + leftShift, 20 * scale, 0.1f);
+        contentNode.setLocalTranslation(20 * scale + leftShift, -70 * scale, 0.1f);
         windowNode.attachChild(contentNode);
 
         positionWindow();
