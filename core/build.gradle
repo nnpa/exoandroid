@@ -1,0 +1,68 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.0.13'
+}
+
+repositories {
+    mavenCentral()
+    // Для Minie (может потребоваться JitPack)
+    maven { url 'https://jitpack.io' }
+}
+
+javafx {
+    version = "21"
+    modules = [ 'javafx.controls', 'javafx.media' ]
+
+}
+
+dependencies {
+    // Объединенные библиотеки JMonkeyEngine 3.8.1
+implementation 'org.jmonkeyengine:jme3-core:3.8.1-stable'
+implementation 'org.jmonkeyengine:jme3-desktop:3.8.1-stable'
+implementation 'org.jmonkeyengine:jme3-lwjgl3:3.8.1-stable'
+    implementation 'org.jmonkeyengine:jme3-plugins:3.8.1-stable'
+    implementation 'org.jmonkeyengine:jme3-jogg:3.8.1-stable'
+
+    // Локальные библиотеки (если лежат в папке libs)
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // UI и утилиты
+    implementation 'com.simsilica:lemur-proto:1.13.0'
+    implementation 'org.json:json:20230227'
+    implementation 'com.google.code.gson:gson:2.13.2'
+implementation 'com.github.stephengold:Minie:9.0.3'
+
+    // JavaFX для иконок и окон
+    implementation 'org.openjfx:javafx-controls:21'
+    implementation 'org.openjfx:javafx-graphics:21'
+implementation 'net.java.dev.jna:jna:5.16.0'
+implementation 'net.java.dev.jna:jna-platform:5.16.0'
+implementation 'org.lwjgl:lwjgl-glfw:3.3.6'
+implementation 'com.github.stephengold:jme-ttf:3.0.1'
+    implementation 'com.google.guava:guava:32.1.3-jre'
+
+}
+
+application {
+    // Теперь лаунчер лежит прямо в core
+    mainClass = 'com.mygame.DesktopLauncher'
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+}
+processResources {
+    duplicatesStrategy = 'exclude'
+}
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(AbstractArchiveTask) {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

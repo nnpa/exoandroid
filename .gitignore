@@ -1,0 +1,18 @@
+# Папки сборки
+.gradle/
+build/
+out/
+android/build/
+core/build/
+desktop/build/
+
+# Файлы от падения Java
+*.hprof
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# Логи
+*.log

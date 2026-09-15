@@ -1,0 +1,80 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.mygame'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.mygame'
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java']
+            res.srcDirs = ['src/main/res']
+            assets.srcDirs = ['../core/src/main/resources/assets']
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+packagingOptions {
+    exclude 'META-INF/INDEX.LIST'
+    exclude 'META-INF/LICENSE'
+    exclude 'META-INF/NOTICE'
+    exclude '**/*.groovy'
+    exclude 'META-INF/**/*.sha1'
+    exclude 'META-INF/AL2.0'
+    exclude 'META-INF/LGPL2.1'
+    pickFirsts += ['**/*.so']
+    pickFirsts += ['META-INF/substrate/config/*.json']
+}
+
+    // Отключаем проверку Lint на дублирование классов (если нужно)
+    lint {
+        disable 'DuplicatePlatformClasses'
+        // или baseline = file("lint-baseline.xml")
+    }
+}
+
+dependencies {
+    // ===== ИСКЛЮЧАЕМ JAVAFX И ORG.JSON ИЗ ЗАВИСИМОСТИ ОТ CORE =====
+    implementation(project(':core')) {
+        exclude group: 'org.openjfx'
+        exclude group: 'org.json', module: 'json'
+	exclude group: 'org.jmonkeyengine', module: 'jme3-desktop'
+        exclude group: 'org.jmonkeyengine', module: 'jme3-lwjgl3'
+        exclude group: 'org.lwjgl'
+    }
+
+    // ---- jMonkeyEngine для Android ----
+    implementation 'org.jmonkeyengine:jme3-android:3.8.1-stable'
+    implementation 'org.jmonkeyengine:jme3-core:3.8.1-stable'
+    implementation 'org.jmonkeyengine:jme3-plugins:3.8.1-stable'
+
+    // ---- LEMUR (только из Maven Central) ----
+    implementation 'com.simsilica:lemur:1.16.0'
+    implementation 'com.simsilica:lemur-proto:1.13.0'
+
+    // ---- ОСТАЛЬНОЕ (без org.json) ----
+    // implementation 'org.json:json:20230227'   // УДАЛЯЕМ
+
+    // ---- ИСКЛЮЧАЕМ ВСЕ ТРАНЗИТИВНЫЕ LEMUR ИЗ JITPACK ----
+    configurations.all {
+        exclude group: 'com.github.jMonkeyEngine-Contributions.lemur', module: 'lemur'
+        exclude group: 'com.github.jMonkeyEngine-Contributions.lemur', module: 'lemur-proto'
+    }
+}
