@@ -28,6 +28,13 @@ public class TalentWindow {
      */
     private static final float FONT_MULT = 2f;
 
+    /**
+     * Окно «второго тапа» для таланта, секунды.
+     * Первый тап — описание, второй тап в течение этого
+     * интервала — прокачка. Иначе счётчик сбрасывается.
+     */
+    private static final float TALENT_CONFIRM_WINDOW = 4.0f;
+
     private SimpleApplication app;
     private TalentManager talentManager;
     private UIManager uiManager;
@@ -38,15 +45,24 @@ public class TalentWindow {
     private Label tooltipLabel;
     private float tooltipTimer = 0f;
     private boolean tooltipVisible = false;
-    private List<Button> talentButtons = new ArrayList<>();
+    private boolean tooltipPersistent = false;
+
     private Talent.Branch currentBranch = Talent.Branch.DEFENSE;
-    private Map<String, Long> lastClickTime = new HashMap<>();
 
     private float currentWidth = 500;
     private float currentHeight = 550;
     private float buttonSize = 60;
     private float buttonSpacingH = 20;
     private float buttonSpacingV = 30;
+
+    /**
+     * Отслеживаем, по какому таланту первый тап уже показал
+     * описание — если второй тап придёт в течение
+     * TALENT_CONFIRM_WINDOW секунд, прокачиваем.
+     */
+    private final Map<String, Float> talentConfirmTimer = new HashMap<>();
+
+    private List<Spatial> talentContainers = new ArrayList<>();
 
     private static final Map<String, String> ICON_MAP = new HashMap<>();
     static {
@@ -106,8 +122,8 @@ public class TalentWindow {
      *
      * ВАЖНО: не используем button.addClickCommands(...) — этот путь
      * срабатывает по UP-событию, которое на Android при тапе
-     * нередко теряется (см. InventoryManager/TraderWindow/AuctionWindow).
-     * Кнопка мигает нажатой, но действие не выполняется.
+     * нередко теряется. Кнопка мигает нажатой, но действие
+     * не выполняется.
      */
     private void bindTouchAction(Button button, final Runnable action) {
 
@@ -131,49 +147,46 @@ public class TalentWindow {
         });
     }
 
-private void createTooltip() {
-    tooltipLabel = new Label("");
-
-    // Шрифт ×2 (как в остальных окнах).
-    tooltipLabel.setFontSize(14 * FONT_MULT);
-    tooltipLabel.setColor(ColorRGBA.White);
-    tooltipLabel.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.1f, 0.1f, 0.2f, 0.95f)));
-
-    // Под увеличенный шрифт нужно больше места.
-    tooltipLabel.setPreferredSize(new Vector3f(600, 160, 0));
-
     // ============================================================
-    // ТУЛТИП ОПУЩЕН НИЖЕ ПАНЕЛИ СТАТОВ (ник/HP/MP).
-    //
-    // Панель статов живёт в UIManager в левом верхнем углу
-    // и занимает примерно [screenHeight − 110*scale,
-    //                       screenHeight − 30*scale].
-    //
-    // Раньше тултип стартовал на Y = screenHeight − 170
-    // и на некоторых разрешениях заезжал на статы.
-    //
-    // Теперь он стартует на Y = screenHeight − 340 — с
-    // гарантированным запасом ниже статов при любом scale
-    // (0.5 … 1.5). На узких экранах Y дополнительно
-    // ограничен сверху, чтобы тултип не уехал в самый низ
-    // окна талантов.
+    // TOOLTIP
     // ============================================================
-    float screenHeight = app.getCamera().getHeight();
-    float tooltipTopY = screenHeight - 340f;
 
-    // Страховка: не ниже, чем «верх окна талантов − 20».
-    // Окно талантов центрируется по вертикали, его верх
-    // примерно на (screenHeight + 550*scale) / 2 — возьмём
-    // 550 * 1.0 как верхнюю границу.
-    float minAllowedY = (screenHeight + 550f) / 2f - 20f;
-    if (tooltipTopY < minAllowedY) {
-        tooltipTopY = minAllowedY;
+    private void createTooltip() {
+        tooltipLabel = new Label("");
+
+        // Шрифт ×2 (как в остальных окнах).
+        tooltipLabel.setFontSize(14 * FONT_MULT);
+        tooltipLabel.setColor(ColorRGBA.White);
+        tooltipLabel.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.1f, 0.1f, 0.2f, 0.95f)));
+
+        // Под увеличенный шрифт нужно больше места.
+        tooltipLabel.setPreferredSize(new Vector3f(600, 160, 0));
+
+        // ============================================================
+        // ТУЛТИП ОПУЩЕН НИЖЕ ПАНЕЛИ СТАТОВ (ник/HP/MP).
+        //
+        // Панель статов живёт в UIManager в левом верхнем углу
+        // и занимает примерно [screenHeight − 110*scale,
+        //                       screenHeight − 30*scale].
+        // ============================================================
+        float screenHeight = app.getCamera().getHeight();
+        float tooltipTopY = screenHeight - 340f;
+
+        // Страховка: не ниже, чем «верх окна талантов − 20».
+        float minAllowedY = (screenHeight + 550f) / 2f - 20f;
+        if (tooltipTopY < minAllowedY) {
+            tooltipTopY = minAllowedY;
+        }
+
+        tooltipLabel.setLocalTranslation(10, tooltipTopY, 0);
+        tooltipLabel.setCullHint(Node.CullHint.Always);
+        app.getGuiNode().attachChild(tooltipLabel);
     }
 
-    tooltipLabel.setLocalTranslation(10, tooltipTopY, 0);
-    tooltipLabel.setCullHint(Node.CullHint.Always);
-    app.getGuiNode().attachChild(tooltipLabel);
-}
+    // ============================================================
+    // СОЗДАНИЕ ОКНА
+    // ============================================================
+
     private void createWindow() {
         float screenWidth = app.getCamera().getWidth();
         float screenHeight = app.getCamera().getHeight();
@@ -222,7 +235,7 @@ private void createTooltip() {
         float tabY = currentHeight - 60 * scale;
 
         // ============================================================
-        // TABS — DOWN-обработчик (bindTouchAction)
+        // TABS
         // ============================================================
 
         Button defTab = new Button(getLocalized("talents.tab.defense"));
@@ -253,10 +266,7 @@ private void createTooltip() {
         windowNode.attachChild(pointsLabel);
 
         // ============================================================
-        // RESET  — увеличена: 70×25 → 180×50, шрифт 12 → 22
-        //
-        // Кнопка уже была переведена на bindTouchAction, здесь
-        // меняем только размер/шрифт/позицию.
+        // RESET
         // ============================================================
 
         Button resetButton = new Button(getLocalized("talents.reset"));
@@ -286,9 +296,7 @@ private void createTooltip() {
         windowNode.attachChild(resetButton);
 
         // ============================================================
-        // CLOSE  — теперь жёстко «ЗАКРЫТЬ» капсом (как в
-        // InventoryManager / TraderWindow / AuctionWindow /
-        // BlacksmithWindow), 25×25 → 180×50, шрифт 14 → 22.
+        // CLOSE
         // ============================================================
 
         Button closeButton = new Button(getLocalized("ui.close_button"));
@@ -310,8 +318,9 @@ private void createTooltip() {
         updateUI();
     }
 
-    private List<Spatial> talentContainers = new ArrayList<>();
-    private boolean tooltipPersistent = false;
+    // ============================================================
+    // UI ТАЛАНТОВ
+    // ============================================================
 
     public void updateUI() {
 
@@ -429,6 +438,7 @@ private void createTooltip() {
                 if (found != null) {
 
                     final Talent talent = found;
+                    final TalentTree treeRef = tree;
 
                     int level = talentManager
                             .getLearned()
@@ -443,7 +453,6 @@ private void createTooltip() {
                             >= talent.getCost();
 
                     boolean isAvailable = hasPoints && hasPrereqs;
-
                     boolean isMaxLevel = level >= talent.getMaxLevel();
 
                     // =================================================
@@ -535,7 +544,7 @@ private void createTooltip() {
                     cellNode.attachChild(textLabel);
 
                     // =================================================
-                    // Невидимая область клика (уже DOWN-friendly)
+                    // Невидимая область клика (DOWN-friendly)
                     // =================================================
 
                     Geometry clickTarget = new Geometry(
@@ -555,8 +564,12 @@ private void createTooltip() {
                     cellNode.attachChild(clickTarget);
 
                     // =================================================
-                    // MouseListener таланта — уже реагирует на DOWN
-                    // (isPressed), поэтому на Android работает.
+                    // MouseListener таланта
+                    //
+                    // Android: первый тап — описание,
+                    //          второй тап — прокачка.
+                    // Desktop: hover — описание,
+                    //          клик — прокачка (как раньше).
                     // =================================================
 
                     MouseListener talentListener = new MouseListener() {
@@ -572,72 +585,95 @@ private void createTooltip() {
 
                             evt.setConsumed();
 
+                            String talentId = talent.getId();
+
+                            // -------------------------------------------------
+                            // 1. Максимальный уровень
+                            // -------------------------------------------------
                             if (isMaxLevel) {
-                                showTooltip(
-                                        talent.getLocalizedName()
-                                                + getLocalized("talents.maxlevel")
-                                );
+                                String desc = talent.getLocalizedDescription();
+                                if (desc == null || desc.isEmpty()) {
+                                    desc = talent.getLocalizedName();
+                                }
+                                showTooltip(desc + "\n"
+                                        + getLocalized("talents.maxlevel"));
+                                talentConfirmTimer.remove(talentId);
                                 return;
                             }
 
+                            // -------------------------------------------------
+                            // 2. Недоступный талант
+                            // -------------------------------------------------
                             if (!isAvailable) {
+                                StringBuilder msg = new StringBuilder();
 
-                                StringBuilder msg = new StringBuilder(
-                                        getLocalized("talents.notavailable")
-                                );
+                                String desc = talent.getLocalizedDescription();
+                                if (desc != null && !desc.isEmpty()) {
+                                    msg.append(desc).append("\n\n");
+                                }
+
+                                msg.append(getLocalized("talents.notavailable"));
 
                                 if (!hasPrereqs) {
-
                                     msg.append(getLocalized("talents.prereqmissing"));
-
                                     for (String prereqId : talent.getPrerequisites()) {
-
                                         Integer learnedLevel = talentManager
                                                 .getLearned()
                                                 .get(prereqId);
-
                                         if (learnedLevel == null || learnedLevel == 0) {
-
-                                            Talent prereqTalent = tree.getTalentById(prereqId);
-
-                                            if (prereqTalent != null) {
-                                                msg.append(prereqTalent.getLocalizedName());
-                                            } else {
-                                                msg.append(prereqId);
-                                            }
-
+                                            Talent prereqTalent =
+                                                    treeRef.getTalentById(prereqId);
+                                            msg.append(prereqTalent != null
+                                                    ? prereqTalent.getLocalizedName()
+                                                    : prereqId);
                                             msg.append(" ");
                                         }
                                     }
-
                                 } else if (!hasPoints) {
                                     msg.append(getLocalized("talents.notenoughpoints"));
                                 }
 
                                 showTooltip(msg.toString());
+                                talentConfirmTimer.remove(talentId);
                                 return;
                             }
 
+                            // -------------------------------------------------
+                            // 3. Талант доступен.
+                            //    Первый тап — описание,
+                            //    второй тап — прокачка.
+                            // -------------------------------------------------
+                            boolean confirmed = talentConfirmTimer.containsKey(talentId);
+
+                            if (!confirmed) {
+                                String desc = talent.getLocalizedDescription();
+                                if (desc == null || desc.isEmpty()) {
+                                    desc = talent.getLocalizedName();
+                                }
+                                showTooltip(desc + "\n\n"
+                                        + getLocalized("talents.tap_again_to_upgrade"));
+
+                                talentConfirmTimer.clear();
+                                talentConfirmTimer.put(talentId, TALENT_CONFIRM_WINDOW);
+                                return;
+                            }
+
+                            // Второй тап — прокачиваем
+                            talentConfirmTimer.remove(talentId);
                             SoundManager.playSound(SoundManager.SOUND_CLICK);
 
                             talentManager
-                                    .levelUpTalentAsync(talent.getId())
+                                    .levelUpTalentAsync(talentId)
                                     .thenAccept(success -> {
-
                                         app.enqueue(() -> {
-
                                             if (success) {
-
                                                 updateUI();
-
                                                 showTooltip(
                                                         "✓ "
                                                                 + talent.getLocalizedName()
                                                                 + getLocalized("talents.upgrade.success")
                                                 );
-
                                             } else {
-
                                                 showTooltip(
                                                         "✗ "
                                                                 + getLocalized("talents.upgrade.fail")
@@ -645,14 +681,18 @@ private void createTooltip() {
                                                                 + talent.getLocalizedName()
                                                 );
                                             }
-
                                             return null;
                                         });
                                     });
                         }
 
+                        // =============================================
+                        // Hover (десктоп). На Android обычно не приходит.
+                        // =============================================
                         @Override
-                        public void mouseEntered(MouseMotionEvent evt, Spatial spatial, Spatial target) {
+                        public void mouseEntered(MouseMotionEvent evt,
+                                                 Spatial spatial,
+                                                 Spatial target) {
                             String desc = talent.getLocalizedDescription();
                             if (desc == null || desc.isEmpty()) {
                                 desc = talent.getLocalizedName();
@@ -661,12 +701,16 @@ private void createTooltip() {
                         }
 
                         @Override
-                        public void mouseExited(MouseMotionEvent evt, Spatial spatial, Spatial target) {
+                        public void mouseExited(MouseMotionEvent evt,
+                                                Spatial spatial,
+                                                Spatial target) {
                             hideTooltipPersistent();
                         }
 
                         @Override
-                        public void mouseMoved(MouseMotionEvent evt, Spatial spatial, Spatial target) {}
+                        public void mouseMoved(MouseMotionEvent evt,
+                                               Spatial spatial,
+                                               Spatial target) {}
                     };
 
                     MouseEventControl.removeListenersFromSpatial(clickTarget);
@@ -706,20 +750,11 @@ private void createTooltip() {
                             + talentManager.getAvailablePoints()
             );
         }
-
-        // ============================================================
-        // ВАЖНО про updateLogicalState / updateGeometricState
-        //
-        // Эти вызовы намеренно убраны — на Android они давали
-        // исключение, потому что jME3 обновляет guiNode в
-        // рендер-цикле каждый кадр, а повторный ручной вызов из
-        // сетевого колбэка (levelUpTalentAsync) приводил к
-        // двойному обновлению контролов Lemur.
-        //
-        // attach/detach детей сам выставляет флаги update —
-        // bounds и world-transform подтянутся на следующем кадре.
-        // ============================================================
     }
+
+    // ============================================================
+    // TOOLTIP: ПОКАЗ / СКРЫТИЕ
+    // ============================================================
 
     private void showTooltip(String text) {
         if (tooltipLabel == null || !isVisible) return;
@@ -727,6 +762,7 @@ private void createTooltip() {
         tooltipLabel.setCullHint(Node.CullHint.Dynamic);
         tooltipVisible = true;
         tooltipTimer = 3.0f;
+        tooltipPersistent = false;
     }
 
     private void hideTooltip() {
@@ -734,12 +770,27 @@ private void createTooltip() {
         tooltipLabel.setCullHint(Node.CullHint.Always);
         tooltipVisible = false;
         tooltipTimer = 0f;
+        tooltipPersistent = false;
     }
 
     public void update(float tpf) {
         if (tooltipVisible && isVisible && !tooltipPersistent) {
             tooltipTimer -= tpf;
             if (tooltipTimer <= 0) hideTooltip();
+        }
+
+        // Тикаем окна подтверждения талантов
+        if (!talentConfirmTimer.isEmpty()) {
+            Iterator<Map.Entry<String, Float>> it = talentConfirmTimer.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, Float> e = it.next();
+                float left = e.getValue() - tpf;
+                if (left <= 0f) {
+                    it.remove();
+                } else {
+                    e.setValue(left);
+                }
+            }
         }
     }
 
@@ -755,6 +806,10 @@ private void createTooltip() {
         tooltipPersistent = false;
         hideTooltip();
     }
+
+    // ============================================================
+    // LAYOUT / SHOW / HIDE
+    // ============================================================
 
     public void updateLayout(int screenWidth, int screenHeight) {
         if (isVisible) {
@@ -777,6 +832,9 @@ private void createTooltip() {
         if (uiManager != null) uiManager.onTalentClosed(windowNode);
         else if (app.getGuiNode().hasChild(windowNode)) app.getGuiNode().detachChild(windowNode);
         hideTooltip();
+
+        // Сбрасываем «второй тап» при закрытии окна
+        talentConfirmTimer.clear();
     }
 
     public void toggle() {

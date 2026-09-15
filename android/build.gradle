@@ -1,5 +1,21 @@
 apply plugin: 'com.android.application'
 
+// ============================================================
+// ЧТЕНИЕ ПАРАМЕТРОВ ПОДПИСИ
+//
+// Файл keystore.properties лежит В КОРНЕ проекта
+// (там же, где settings.gradle), рядом с key.jks.
+//
+// Если файла нет (например, на CI без секретов) — блок
+// signingConfigs.release просто не подхватится, и сборка
+// release упадёт только при попытке подписать — это ожидаемо.
+// ============================================================
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace 'com.mygame'
     compileSdk 34
@@ -16,9 +32,44 @@ android {
         }
     }
 
+    // ============================================================
+    // ПОДПИСЬ РЕЛИЗА
+    //
+    // Заполняется из keystore.properties:
+    //   storeFile=.../key.jks
+    //   storePassword=...
+    //   keyAlias=...
+    //   keyPassword=...
+    // ============================================================
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Применяем подпись, если keystore.properties найден
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+
+            // Пока оставляем минификацию выключенной, чтобы
+            // не ловить вылеты из-за обфускации jME3 через reflection.
+            // Когда убедитесь, что релиз стабилен — можно включить
+            // (и добавить правила в proguard-rules.pro).
             minifyEnabled false
+            // shrinkResources true
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+            //               'proguard-rules.pro'
+        }
+        debug {
+            // ничего дополнительно
         }
     }
 
@@ -31,22 +82,20 @@ android {
         }
     }
 
-packagingOptions {
-    exclude 'META-INF/INDEX.LIST'
-    exclude 'META-INF/LICENSE'
-    exclude 'META-INF/NOTICE'
-    exclude '**/*.groovy'
-    exclude 'META-INF/**/*.sha1'
-    exclude 'META-INF/AL2.0'
-    exclude 'META-INF/LGPL2.1'
-    pickFirsts += ['**/*.so']
-    pickFirsts += ['META-INF/substrate/config/*.json']
-}
+    packagingOptions {
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/NOTICE'
+        exclude '**/*.groovy'
+        exclude 'META-INF/**/*.sha1'
+        exclude 'META-INF/AL2.0'
+        exclude 'META-INF/LGPL2.1'
+        pickFirsts += ['**/*.so']
+        pickFirsts += ['META-INF/substrate/config/*.json']
+    }
 
-    // Отключаем проверку Lint на дублирование классов (если нужно)
     lint {
         disable 'DuplicatePlatformClasses'
-        // или baseline = file("lint-baseline.xml")
     }
 }
 
@@ -55,7 +104,7 @@ dependencies {
     implementation(project(':core')) {
         exclude group: 'org.openjfx'
         exclude group: 'org.json', module: 'json'
-	exclude group: 'org.jmonkeyengine', module: 'jme3-desktop'
+        exclude group: 'org.jmonkeyengine', module: 'jme3-desktop'
         exclude group: 'org.jmonkeyengine', module: 'jme3-lwjgl3'
         exclude group: 'org.lwjgl'
     }
@@ -70,7 +119,7 @@ dependencies {
     implementation 'com.simsilica:lemur-proto:1.13.0'
 
     // ---- ОСТАЛЬНОЕ (без org.json) ----
-    // implementation 'org.json:json:20230227'   // УДАЛЯЕМ
+    // implementation 'org.json:json:20230227'   // УДАЛЕНО
 
     // ---- ИСКЛЮЧАЕМ ВСЕ ТРАНЗИТИВНЫЕ LEMUR ИЗ JITPACK ----
     configurations.all {
