@@ -1,6 +1,8 @@
 package com.mygame.managers;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.input.event.MouseButtonEvent;
+import com.jme3.input.event.MouseMotionEvent;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
@@ -10,12 +12,17 @@ import com.jme3.texture.Texture;
 import com.simsilica.lemur.*;
 import com.simsilica.lemur.component.QuadBackgroundComponent;
 import com.simsilica.lemur.component.SpringGridLayout;
+import com.simsilica.lemur.event.MouseEventControl;
+import com.simsilica.lemur.event.MouseListener;
 import com.mygame.Main;
 import com.mygame.items.Item;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class AuctionWindow {
 
@@ -26,6 +33,11 @@ public class AuctionWindow {
     private NetworkManager networkManager;
     private InventoryManager inventoryManager;
     private PlayerManager playerManager;
+
+    // ================================================================
+    // ВИРТУАЛЬНАЯ КЛАВИАТУРА (одна на всё окно)
+    // ================================================================
+    private VirtualKeyboard virtualKeyboard;
 
     private Node windowNode;
     private boolean isVisible = false;
@@ -39,6 +51,13 @@ public class AuctionWindow {
     private Label goldLabel;
     private Label statusLabel;
     private TextField priceInput;
+
+    // ================================================================
+    // МОДАЛКА «ХАРАКТЕРИСТИКИ ПРЕДМЕТА»
+    // Работает по тапу на лот — заменяет старый hover-tooltip,
+    // которого на Android нет.
+    // ================================================================
+    private Node itemDetailOverlay;
 
     private int selectedSlot = -1;
 
@@ -64,6 +83,17 @@ public class AuctionWindow {
         this.inventoryManager = im;
         this.playerManager = pm;
         this.networkManager = Main.getInstance().getNetworkManager();
+
+        this.virtualKeyboard = new VirtualKeyboard(app, ui.getGuiNode());
+        this.virtualKeyboard.setOnShowListener(kbHeight -> {
+            System.out.println("[AuctionWindow] VirtualKeyboard shown, height=" + kbHeight);
+            repositionForKeyboard(true, kbHeight);
+        });
+        this.virtualKeyboard.setOnHideListener(() -> {
+            System.out.println("[AuctionWindow] VirtualKeyboard hidden");
+            repositionForKeyboard(false, 0f);
+        });
+
         createWindow();
     }
 
@@ -106,13 +136,41 @@ public class AuctionWindow {
         scale = Math.max(0.5f, Math.min(scale, 1.5f));
     }
 
+    // ================================================================
+    // ВИРТУАЛЬНАЯ КЛАВИАТУРА — УСТАНОВКА НА ПОЛЕ
+    // ================================================================
+    private void installKeyboardTrigger(TextField field) {
+        if (field == null || virtualKeyboard == null) return;
+        MouseEventControl.addListenersToSpatial(field, new MouseListener() {
+            @Override
+            public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
+                if (evt.getButtonIndex() != 0) return;
+                if (!evt.isPressed()) return;
+                System.out.println("[AuctionWindow] TextField tap → open keyboard");
+                virtualKeyboard.show(field);
+            }
+            @Override public void mouseEntered(MouseMotionEvent evt, Spatial s, Spatial t) {}
+            @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
+            @Override public void mouseMoved(MouseMotionEvent evt, Spatial s, Spatial t) {}
+        });
+    }
+
+    private void repositionForKeyboard(boolean keyboardVisible, float keyboardHeight) {
+        System.out.println("[AuctionWindow] keyboard " 
+            + (keyboardVisible ? "shown (h=" + keyboardHeight + ")" : "hidden"));
+    }
+
     private void createWindow() {
         updateScale();
         windowNode = new Node("AuctionWindowNode");
 
         winW = 775 * scale;
-        winH = 600 * scale;
-        leftShift = 19 * scale;
+        float desiredWinH = 780 * scale;
+        float maxWinH = app.getCamera().getHeight() - 40;
+        winH = Math.min(desiredWinH, maxWinH);
+        System.out.println("[AuctionWindow] winH=" + winH
+                + " (desired=" + desiredWinH + ", max=" + maxWinH + ")");
+leftShift = 19 * scale;
 
         Geometry bg = uiManager.createBackgroundGeometry(winW, winH);
         bg.setLocalTranslation(0, 0, -0.1f);
@@ -157,15 +215,6 @@ public class AuctionWindow {
         goldLabel.setLocalTranslation(15 * scale + leftShift, winH - 80 * scale, 0.1f);
         windowNode.attachChild(goldLabel);
 
-        // ============================================================
-        // ФИКС: statusLabel создаётся РОВНО ОДИН РАЗ, постоянно
-        // висит на windowNode и НЕ участвует в clearDynamicParts().
-        // Раньше он добавлялся в dynamicParts и при первом же
-        // showSellTab()/showBrowseTab() отсоединялся — после чего
-        // updateStatus() писал текст в отсоединённую метку, и любые
-        // сообщения об ошибках (в т.ч. «выберите предмет» и ошибки
-        // сервера при продаже) оставались невидимыми.
-        // ============================================================
         statusLabel = new Label("");
         statusLabel.setFontSize(18 * scale);
         statusLabel.setColor(ColorRGBA.Red);
@@ -191,6 +240,9 @@ public class AuctionWindow {
         dynamicParts.clear();
     }
 
+    // ================================================================
+    // BROWSE TAB
+    // ================================================================
     private void showBrowseTab() {
         clearDynamicParts();
         selectedSlot = -1;
@@ -282,6 +334,7 @@ public class AuctionWindow {
         levelField.setFontSize(20 * scale);
         levelField.setPreferredSize(new Vector3f(60 * scale, 34 * scale, 0));
         lvlContainer.addChild(levelField);
+        installKeyboardTrigger(levelField);
 
         Button lvlApplyBtn = new Button(L("auction.filter.go"));
         lvlApplyBtn.setFontSize(20 * scale);
@@ -337,6 +390,15 @@ public class AuctionWindow {
                 .thenAccept(response -> {
                     app.enqueue(() -> {
                         if (response == null) { updateStatus(L("error.load_failed")); return null; }
+                        System.out.println("[AuctionWindow] getLots=" + response.getLots().size()
+                                + " totalPages=" + response.getTotalPages()
+                                + " currentPage=" + response.getCurrentPage());
+                        for (AuctionLot lot : response.getLots()) {
+                            System.out.println("[AuctionWindow]  lot#" + lot.getId()
+                                    + " seller=" + lot.getSellerName()
+                                    + " price=" + lot.getPrice()
+                                    + " items=" + lot.getItems().size());
+                        }
                         this.currentLots = response.getLots();
                         this.totalPages = response.getTotalPages();
                         updateLotList();
@@ -362,7 +424,7 @@ public class AuctionWindow {
             listAndPaginationContainer.addChild(empty);
         } else {
             for (int i = 0; i < displayCount; i++) {
-                AuctionLot lot = currentLots.get(i);
+                final AuctionLot lot = currentLots.get(i);
                 Container row = new Container();
                 row.setLayout(new SpringGridLayout(Axis.X, Axis.Y));
                 row.setPreferredSize(new Vector3f(rowWidth, rowHeightScaled, 0));
@@ -373,24 +435,34 @@ public class AuctionWindow {
                 infoLabel.setFontSize(18 * scale);
                 infoLabel.setColor(ColorRGBA.White);
                 infoLabel.setPreferredSize(new Vector3f(460 * scale, rowHeightScaled - 4 * scale, 0));
+
+                // ============================================================
+                // ТАП ПО СТРОКЕ ЛОТА → модалка с характеристиками.
+                // Заменяет старый hover-tooltip, которого на Android нет.
+                // ============================================================
+                MouseEventControl.addListenersToSpatial(infoLabel, new MouseListener() {
+                    @Override
+                    public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
+                        if (evt.getButtonIndex() != 0) return;
+                        if (!evt.isPressed()) return;
+                        System.out.println("[AuctionWindow] lot#" + lot.getId() + " tapped → open detail");
+                        showItemDetail(lot);
+                    }
+                    @Override public void mouseEntered(MouseMotionEvent evt, Spatial s, Spatial t) {}
+                    @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
+                    @Override public void mouseMoved(MouseMotionEvent evt, Spatial s, Spatial t) {}
+                });
                 row.addChild(infoLabel);
 
-                if (lot.getSellerName().equals(playerManager.getPlayerName())) {
-                    Label ownerLabel = new Label(L("auction.yours"));
-                    ownerLabel.setFontSize(18 * scale);
-                    ownerLabel.setColor(ColorRGBA.Gray);
-                    ownerLabel.setPreferredSize(new Vector3f(110 * scale, rowHeightScaled - 4 * scale, 0));
-                    row.addChild(ownerLabel);
-                } else {
-                    Button buyBtn = new Button(L("auction.buy"));
-                    buyBtn.setFontSize(18 * scale);
-                    buyBtn.setPreferredSize(new Vector3f(100 * scale, rowHeightScaled - 4 * scale, 0));
-                    buyBtn.setColor(ColorRGBA.Green);
-                    applyBtnBackground(buyBtn);
-                    final int lotId = lot.getId();
-                    buyBtn.addCommands(Button.ButtonAction.Down, s -> handleBuyLot(lotId));
-                    row.addChild(buyBtn);
-                }
+                // Кнопка «Купить» показывается ВСЕГДА, включая свои лоты.
+                Button buyBtn = new Button(L("auction.buy"));
+                buyBtn.setFontSize(18 * scale);
+                buyBtn.setPreferredSize(new Vector3f(100 * scale, rowHeightScaled - 4 * scale, 0));
+                buyBtn.setColor(ColorRGBA.Green);
+                applyBtnBackground(buyBtn);
+                final int lotId = lot.getId();
+                buyBtn.addCommands(Button.ButtonAction.Down, s -> handleBuyLot(lotId));
+                row.addChild(buyBtn);
 
                 listAndPaginationContainer.addChild(row);
             }
@@ -433,6 +505,188 @@ public class AuctionWindow {
         paginationContainer.addChild(nextBtn);
     }
 
+    // ================================================================
+    // МОДАЛКА «ХАРАКТЕРИСТИКИ ПРЕДМЕТА»
+    // ================================================================
+
+private void showItemDetail(AuctionLot lot) {
+    if (lot == null || lot.getItems().isEmpty()) {
+        System.out.println("[AuctionWindow] showItemDetail: no items in lot");
+        return;
+    }
+    hideItemDetail();
+
+    if (virtualKeyboard != null && virtualKeyboard.isVisible()) {
+        virtualKeyboard.hide();
+    }
+
+    Item item = lot.getItems().get(0);
+
+    float w = app.getCamera().getWidth();
+    float h = app.getCamera().getHeight();
+
+    Node overlay = new Node("ItemDetailOverlay");
+
+    // Затемнённый фон на весь экран
+    final Container backdrop = new Container();
+    backdrop.setPreferredSize(new Vector3f(w, h, 0));
+    backdrop.setBackground(new QuadBackgroundComponent(new ColorRGBA(0f, 0f, 0f, 0.65f)));
+    backdrop.setLocalTranslation(0, 0, 0);
+    MouseEventControl.addListenersToSpatial(backdrop, new MouseListener() {
+        @Override
+        public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
+            if (evt.getButtonIndex() != 0) return;
+            if (!evt.isPressed()) return;
+            hideItemDetail();
+            evt.setConsumed();
+        }
+        @Override public void mouseEntered(MouseMotionEvent evt, Spatial s, Spatial t) {}
+        @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
+        @Override public void mouseMoved(MouseMotionEvent evt, Spatial s, Spatial t) {}
+    });
+    overlay.attachChild(backdrop);
+
+    // ============================================================
+    // МОДАЛКА ПОДНЯТА К ВЕРХУ ЭКРАНА.
+    // Было: panel по центру по вертикали — panelY = (h - ph) / 2.
+    // Стало: панель прижата к верхней части экрана с отступом
+    //        70*scale, чтобы не перекрывать HUD снизу и оставить
+    //        место для плавающей клавиатуры в правом нижнем углу.
+    // ============================================================
+    float pw = Math.min(440 * scale, w - 40);
+    float ph = Math.min(500 * scale, h - 80);
+
+    float topMargin = 70 * scale;
+    float panelY = h - ph - topMargin;
+    if (panelY < 10f) panelY = 10f;   // страховка для очень низких экранов
+
+    Container panel = new Container();
+    panel.setPreferredSize(new Vector3f(pw, ph, 0));
+    panel.setBackground(new QuadBackgroundComponent(new ColorRGBA(0.1f, 0.1f, 0.18f, 0.98f)));
+    panel.setLocalTranslation((w - pw) / 2, panelY, 0.1f);
+
+    MouseEventControl.addListenersToSpatial(panel, new MouseListener() {
+        @Override
+        public void mouseButtonEvent(MouseButtonEvent evt, Spatial s, Spatial t) {
+            if (evt.getButtonIndex() != 0) return;
+            if (!evt.isPressed()) return;
+            evt.setConsumed();
+        }
+        @Override public void mouseEntered(MouseMotionEvent evt, Spatial s, Spatial t) {}
+        @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
+        @Override public void mouseMoved(MouseMotionEvent evt, Spatial s, Spatial t) {}
+    });
+
+    Label content = new Label(buildItemDetailText(lot, item));
+    content.setFontSize(14 * scale * FONT_MULT);
+    content.setColor(ColorRGBA.White);
+    content.setPreferredSize(new Vector3f(pw - 20 * scale, ph - 20 * scale, 0));
+    content.setInsets(new Insets3f(12 * scale, 12 * scale, 12 * scale, 12 * scale));
+    panel.addChild(content);
+
+    overlay.attachChild(panel);
+
+    // Кнопка «Закрыть» — сразу под панелью
+    Button closeBtn = new Button(L("ui.close_button"));
+    closeBtn.setFontSize(18 * scale * FONT_MULT);
+    closeBtn.setPreferredSize(new Vector3f(200 * scale, 50 * scale, 0));
+    closeBtn.setColor(ColorRGBA.White);
+    applyBtnBackground(closeBtn);
+    closeBtn.setLocalTranslation(
+            (w - 200 * scale) / 2,
+            panelY - 60 * scale,
+            0.2f);
+    closeBtn.addCommands(Button.ButtonAction.Down, s -> hideItemDetail());
+    overlay.attachChild(closeBtn);
+
+    uiManager.getGuiNode().attachChild(overlay);
+    itemDetailOverlay = overlay;
+
+    System.out.println("[AuctionWindow] item detail opened for lot#" + lot.getId()
+            + " at panelY=" + panelY);
+}
+    private void hideItemDetail() {
+        if (itemDetailOverlay != null) {
+            if (itemDetailOverlay.getParent() != null) {
+                itemDetailOverlay.removeFromParent();
+            }
+            itemDetailOverlay = null;
+            System.out.println("[AuctionWindow] item detail closed");
+        }
+    }
+
+    /**
+     * Собирает текст характеристик предмета.
+     *
+     * Через reflection — так код компилируется независимо от того,
+     * какие именно геттеры определены в Item (getDamage / getAttack /
+     * getDefense / getArmor / getHealthBonus / getHpBonus и т.п.).
+     * Если геттера нет — просто пропускаем строку.
+     */
+    private String buildItemDetailText(AuctionLot lot, Item item) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append(value(item, "getName")).append("\n\n");
+
+        String type = value(item, "getType");
+        if (!type.isEmpty())     sb.append("Type: ").append(type).append("\n");
+
+        String level = value(item, "getLevel");
+        if (!level.isEmpty())    sb.append("Level: ").append(level).append("\n");
+
+        String rarity = value(item, "getRarity");
+        if (!rarity.isEmpty())   sb.append("Rarity: ").append(rarity).append("\n");
+
+        sb.append("\n");
+
+        appendIfPositive(sb, "Damage",   item, "getDamage");
+        appendIfPositive(sb, "Attack",   item, "getAttack");
+        appendIfPositive(sb, "Defense",  item, "getDefense");
+        appendIfPositive(sb, "Armor",    item, "getArmor");
+        appendIfPositive(sb, "Health",   item, "getHealthBonus");
+        appendIfPositive(sb, "Mana",     item, "getManaBonus");
+        appendIfPositive(sb, "Sockets",  item, "getSocketCount");
+
+        String desc = value(item, "getDescription");
+        if (!desc.isEmpty()) {
+            sb.append("\n").append(desc).append("\n");
+        }
+
+        sb.append("\nPrice: ").append(lot.getPrice()).append(" g");
+        if (lot.getEndTime() > 0) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+                sb.append("\nEnds: ").append(sdf.format(new Date(lot.getEndTime())));
+            } catch (Exception ignored) {}
+        }
+
+        return sb.toString();
+    }
+
+    private void appendIfPositive(StringBuilder sb, String label, Item item, String getter) {
+        try {
+            Object v = item.getClass().getMethod(getter).invoke(item);
+            if (v instanceof Number) {
+                int n = ((Number) v).intValue();
+                if (n > 0) sb.append(label).append(": +").append(n).append("\n");
+            }
+        } catch (Exception ignored) {
+            // геттера нет — молча пропускаем
+        }
+    }
+
+    private String value(Item item, String getter) {
+        try {
+            Object v = item.getClass().getMethod(getter).invoke(item);
+            return v == null ? "" : String.valueOf(v);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    // ================================================================
+    // SELL TAB
+    // ================================================================
     private void showSellTab() {
         clearDynamicParts();
         float startY = winH - 140 * scale;
@@ -488,15 +742,6 @@ public class AuctionWindow {
                     cell.addCommands(Button.ButtonAction.Down, s -> {
                         if (selectedSlot == slot) selectedSlot = -1;
                         else selectedSlot = slot;
-                        // ============================================
-                        // ФИКС: defer перестройки таба на следующий
-                        // кадр. Если вызвать showSellTab() прямо в
-                        // обработчике ButtonAction.Down, Lemur
-                        // остаётся с «зажатой» кнопкой, которую мы
-                        // только что отсоединили от сцены — после
-                        // этого клики на другие кнопки (в частности
-                        // на «Продать») перестают доходить.
-                        // ============================================
                         app.enqueue(() -> { showSellTab(); return null; });
                     });
                 }
@@ -525,7 +770,7 @@ public class AuctionWindow {
         priceInput.setPreferredSize(new Vector3f(120 * scale, 40 * scale, 0));
         priceInput.setFontSize(24 * scale);
         priceContainer.addChild(priceInput);
-        AndroidTextInputHelper.attachNumericKeyboard(app, priceInput, L("auction.sell.price"));
+        installKeyboardTrigger(priceInput);
 
         Button sellNowBtn = new Button(L("auction.sell.list"));
         sellNowBtn.setFontSize(22 * scale);
@@ -545,11 +790,6 @@ public class AuctionWindow {
         });
         priceContainer.addChild(sellNowBtn);
 
-        // ============================================================
-        // Возвращаем статус-метку наверх, чтобы её не перекрыл
-        // priceContainer при перестройке таба. Метка общая и живёт
-        // всё время жизни окна — см. createWindow().
-        // ============================================================
         if (statusLabel != null && statusLabel.getParent() != null) {
             statusLabel.removeFromParent();
             windowNode.attachChild(statusLabel);
@@ -558,6 +798,7 @@ public class AuctionWindow {
     }
 
     private void handleBuyLot(int lotId) {
+        hideItemDetail();
         networkManager.buyAuctionLot(lotId).thenAccept(response -> {
             if (response != null) {
                 app.enqueue(() -> {
@@ -623,6 +864,14 @@ public class AuctionWindow {
         if (!isVisible) return;
         isVisible = false;
         selectedSlot = -1;
+
+        // Закрываем модалку предмета и клавиатуру — они не должны
+        // висеть поверх HUD после закрытия аукциона.
+        hideItemDetail();
+        if (virtualKeyboard != null && virtualKeyboard.isVisible()) {
+            virtualKeyboard.hide();
+        }
+
         if (windowNode.getParent() != null) uiManager.getGuiNode().detachChild(windowNode);
         if (statusLabel != null) { statusLabel.setText(""); statusLabel.setCullHint(Node.CullHint.Always); }
         if (tooltipContainer != null) tooltipContainer.setCullHint(Node.CullHint.Always);

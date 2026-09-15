@@ -6,7 +6,10 @@ import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 public class AuctionLot {
     private int id;
@@ -21,7 +24,7 @@ public class AuctionLot {
         lot.id = obj.optInt("id");
 
         lot.sellerName = obj.optString("sellerName");
-        if (lot.sellerName.isEmpty() && obj.has("seller_id")) {
+        if (lot.sellerName == null || lot.sellerName.isEmpty()) {
             lot.sellerName = obj.optString("seller_id");
         }
 
@@ -50,14 +53,69 @@ public class AuctionLot {
         JSONArray itemsArray = obj.optJSONArray("items");
         if (itemsArray != null) {
             for (int i = 0; i < itemsArray.length(); i++) {
-                JSONObject itemObj = itemsArray.getJSONObject(i);
-                Item item = Item.fromMap(itemObj.toMap());
-                if (item != null) {
-                    lot.items.add(item);
+                try {
+                    JSONObject itemObj = itemsArray.getJSONObject(i);
+
+                    // ============================================================
+                    // ИСПРАВЛЕНО: было itemObj.toMap().
+                    // На Android у системного org.json.JSONObject нет метода
+                    // toMap() — он есть только в desktop-сборке org.json:json.
+                    // Вызов toMap() → NoSuchMethodError → падение всего
+                    // AuctionLotResponse → browse показывает пусто.
+                    // ============================================================
+                    Map<String, Object> itemMap = jsonToMap(itemObj);
+                    Item item = Item.fromMap(itemMap);
+                    if (item != null) {
+                        lot.items.add(item);
+                    }
+                } catch (Exception itemEx) {
+                    System.out.println("[AuctionLot] Failed to parse item #" + i
+                            + " in lot#" + lot.id + ": " + itemEx.getMessage());
                 }
             }
         }
         return lot;
+    }
+
+    // ================================================================
+    //   JSONObject → Map (Android-safe, без toMap())
+    // ================================================================
+    private static Map<String, Object> jsonToMap(JSONObject obj) {
+        Map<String, Object> map = new HashMap<>();
+        if (obj == null) return map;
+        Iterator<String> keys = obj.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = obj.opt(key);
+            if (value instanceof JSONObject) {
+                map.put(key, jsonToMap((JSONObject) value));
+            } else if (value instanceof JSONArray) {
+                map.put(key, jsonArrayToList((JSONArray) value));
+            } else if (value == JSONObject.NULL) {
+                map.put(key, null);
+            } else {
+                map.put(key, value);
+            }
+        }
+        return map;
+    }
+
+    private static List<Object> jsonArrayToList(JSONArray arr) {
+        List<Object> list = new ArrayList<>();
+        if (arr == null) return list;
+        for (int i = 0; i < arr.length(); i++) {
+            Object value = arr.opt(i);
+            if (value instanceof JSONObject) {
+                list.add(jsonToMap((JSONObject) value));
+            } else if (value instanceof JSONArray) {
+                list.add(jsonArrayToList((JSONArray) value));
+            } else if (value == JSONObject.NULL) {
+                list.add(null);
+            } else {
+                list.add(value);
+            }
+        }
+        return list;
     }
 
     // Геттеры

@@ -374,37 +374,50 @@ public class NetworkManager {
         });
     }
 
-    public CompletableFuture<Map<String, Object>> createAuctionLot(List<Integer> slotIndices, int price) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                if (authToken == null) {
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("error", "Not authenticated");
-                    return error;
-                }
-                JSONObject json = new JSONObject();
-                json.put("slotIndices", slotIndices);
-                json.put("price", price);
-                System.out.println("[NetworkManager] Sending createAuctionLot: " + json);
-                String response = sendPostRequest("/auction/create", json.toString(), authToken);
-                System.out.println("[NetworkManager] createAuctionLot response: " + response);
-                JSONObject result = new JSONObject(response);
-                if (result.optBoolean("success", false)) {
-                    return parseCharacterResponse(result);
-                } else {
-                    Map<String, Object> error = new HashMap<>();
-                    error.put("error", result.optString("message", "Unknown error"));
-                    return error;
-                }
-            } catch (Exception e) {
-                e.printStackTrace(System.out);
+public CompletableFuture<Map<String, Object>> createAuctionLot(List<Integer> slotIndices, int price) {
+    return CompletableFuture.supplyAsync(() -> {
+        try {
+            if (authToken == null) {
                 Map<String, Object> error = new HashMap<>();
-                error.put("error", e.getMessage());
+                error.put("error", "Not authenticated");
                 return error;
             }
-        });
-    }
+            JSONObject json = new JSONObject();
 
+            // ============================================================
+            // ИСПРАВЛЕНО: было json.put("slotIndices", slotIndices);
+            // На Android у org.json.JSONObject НЕТ перегрузки
+            // put(String, Collection) — она есть только в desktop-сборке
+            // org.json:json. Собираем JSONArray вручную.
+            // ============================================================
+            JSONArray slotsArr = new JSONArray();
+            if (slotIndices != null) {
+                for (Integer s : slotIndices) {
+                    if (s != null) slotsArr.put(s.intValue());
+                }
+            }
+            json.put("slotIndices", slotsArr);
+            json.put("price", price);
+
+            System.out.println("[NetworkManager] Sending createAuctionLot: " + json);
+            String response = sendPostRequest("/auction/create", json.toString(), authToken);
+            System.out.println("[NetworkManager] createAuctionLot response: " + response);
+            JSONObject result = new JSONObject(response);
+            if (result.optBoolean("success", false)) {
+                return parseCharacterResponse(result);
+            } else {
+                Map<String, Object> error = new HashMap<>();
+                error.put("error", result.optString("message", "Unknown error"));
+                return error;
+            }
+        } catch (Exception e) {
+            e.printStackTrace(System.out);
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return error;
+        }
+    });
+}
     public CompletableFuture<Map<String, Object>> buyAuctionLot(int lotId) {
         return CompletableFuture.supplyAsync(() -> {
             try {

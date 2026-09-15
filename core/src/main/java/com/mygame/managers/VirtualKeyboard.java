@@ -20,15 +20,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Числовая виртуальная клавиатура.
+ * Числовая виртуальная клавиатура — плавающая панель СЛЕВА,
+ * ПО ВЕРТИКАЛИ ПО ЦЕНТРУ экрана.
  *
- * Используется для ввода чисел (например, цены лота в AuctionWindow).
- * Содержит:
- *   - цифры 0..9
- *   - backspace (⌫)
- *   - кнопку закрытия (OK)
- *
- * Буквы, Shift и пробел удалены.
+ * Фон имеет отступ сверху и снизу по высоте одной кнопки
+ * (KEY_HEIGHT) — нижний ряд кнопок (⌫ 0 OK) больше не упирается
+ * в нижний край панели, у всей клавиатуры есть «воздух» вокруг.
  */
 public class VirtualKeyboard {
 
@@ -41,20 +38,29 @@ public class VirtualKeyboard {
 
     private float currentHeight = 0;
 
-    // Слушатели
-    public interface OnShowListener {
-        void onShow(float keyboardHeight);
-    }
-    public interface OnHideListener {
-        void onHide();
-    }
+    // ============================================================
+    // ГЕОМЕТРИЯ
+    // ============================================================
+    private static final float KEY_WIDTH = 80f;
+    private static final float KEY_HEIGHT = 65f;
+    private static final float KEY_SPACING = 6f;
+
+    /** Отступ от левого края экрана. */
+    private static final float LEFT_MARGIN = 15f;
+
+    /**
+     * Паддинг сверху и снизу панели.
+     * Раньше фон был впритык к кнопкам, и нижний ряд визуально
+     * «не помещался». Теперь сверху и снизу добавлена полоса
+     * высотой в одну кнопку.
+     */
+    private static final float PADDING_Y = KEY_HEIGHT;
+
+    public interface OnShowListener { void onShow(float keyboardHeight); }
+    public interface OnHideListener { void onHide(); }
     private OnShowListener showListener;
     private OnHideListener hideListener;
 
-    /**
-     * Раскладка числовых клавиш: 3 ряда по 3 цифры (1-2-3, 4-5-6, 7-8-9).
-     * Нижний ряд (⌫, 0, OK) создаётся отдельно — см. buildKeyboard().
-     */
     private static final String[][] NUM_ROWS = {
             {"1", "2", "3"},
             {"4", "5", "6"},
@@ -71,13 +77,8 @@ public class VirtualKeyboard {
         guiNode.attachChild(keyboardNode);
     }
 
-    public void setOnShowListener(OnShowListener listener) {
-        this.showListener = listener;
-    }
-
-    public void setOnHideListener(OnHideListener listener) {
-        this.hideListener = listener;
-    }
+    public void setOnShowListener(OnShowListener listener) { this.showListener = listener; }
+    public void setOnHideListener(OnHideListener listener) { this.hideListener = listener; }
 
     public void show(TextField target) {
         if (target == null) return;
@@ -85,54 +86,70 @@ public class VirtualKeyboard {
         buildKeyboard();
         keyboardNode.setCullHint(Spatial.CullHint.Dynamic);
         isVisible = true;
-        if (showListener != null) {
-            showListener.onShow(currentHeight);
-        }
+        if (showListener != null) showListener.onShow(currentHeight);
     }
 
     public void hide() {
         keyboardNode.setCullHint(Spatial.CullHint.Always);
         isVisible = false;
         activeField = null;
-        if (hideListener != null) {
-            hideListener.onHide();
-        }
+        if (hideListener != null) hideListener.onHide();
     }
 
-    public boolean isVisible() {
-        return isVisible;
-    }
+    public boolean isVisible() { return isVisible; }
 
     public void rebuild() {
         if (isVisible && activeField != null) {
             keyboardNode.detachAllChildren();
             allButtons.clear();
             buildKeyboard();
-            if (showListener != null) {
-                showListener.onShow(currentHeight);
-            }
+            if (showListener != null) showListener.onShow(currentHeight);
         }
     }
 
-    public Node getContainer() {
-        return keyboardNode;
+    public Node getContainer() { return keyboardNode; }
+    public float getHeight() { return currentHeight; }
+
+    // ============================================================
+    // ШИРИНА / ВЫСОТА GUI-ОБЛАСТИ
+    // ============================================================
+    private float getGuiWidth() {
+        try {
+            if (app.getGuiViewPort() != null
+                    && app.getGuiViewPort().getCamera() != null) {
+                float w = app.getGuiViewPort().getCamera().getWidth();
+                if (w > 0) return w;
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (app.getContext() != null && app.getContext().getSettings() != null) {
+                float w = app.getContext().getSettings().getWidth();
+                if (w > 0) return w;
+            }
+        } catch (Exception ignored) {}
+        return 800f;
     }
 
-    public float getHeight() {
-        return currentHeight;
+    private float getGuiHeight() {
+        try {
+            if (app.getGuiViewPort() != null
+                    && app.getGuiViewPort().getCamera() != null) {
+                float h = app.getGuiViewPort().getCamera().getHeight();
+                if (h > 0) return h;
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (app.getContext() != null && app.getContext().getSettings() != null) {
+                float h = app.getContext().getSettings().getHeight();
+                if (h > 0) return h;
+            }
+        } catch (Exception ignored) {}
+        return 600f;
     }
 
     // ============================================================
-    // ANDROID-SAFE BUTTON BINDING
+    // BINDING
     // ============================================================
-
-    /**
-     * Привязывает действие к кнопке через DOWN-событие.
-     *
-     * См. InventoryManager / TraderWindow / TalentWindow / AuctionWindow —
-     * addClickCommands на Android срабатывает ненадёжно (UP-событие
-     * при тапе нередко теряется), поэтому везде используем DOWN.
-     */
     private void bindTouchAction(Button button, final Runnable action) {
         MouseEventControl.addListenersToSpatial(button, new MouseListener() {
             @Override
@@ -141,6 +158,7 @@ public class VirtualKeyboard {
                 if (evt.getButtonIndex() != 0) return;
                 if (!evt.isPressed()) return;
                 action.run();
+                evt.setConsumed();
             }
             @Override public void mouseEntered(MouseMotionEvent evt, Spatial s, Spatial t) {}
             @Override public void mouseExited(MouseMotionEvent evt, Spatial s, Spatial t) {}
@@ -149,29 +167,49 @@ public class VirtualKeyboard {
     }
 
     // ============================================================
-    // BUILD
+    // BUILD — панель СЛЕВА, ПО ВЕРТИКАЛИ ПО ЦЕНТРУ
     // ============================================================
-
     private void buildKeyboard() {
         keyboardNode.detachAllChildren();
         allButtons.clear();
 
-        float screenWidth = app.getCamera().getWidth();
-        float screenHeight = app.getCamera().getHeight();
+        keyboardNode.setLocalTranslation(0, 0, 0);
 
-        // Ключи: 3 колонки. Ограничиваем сверху, чтобы на больших
-        // экранах кнопки не растягивались до абсурда.
-        float keyWidth = Math.min(screenWidth / 4.5f, 160f);
-        float keyHeight = Math.min(screenHeight / 9f, 110f);
-        float spacing = 8f;
+        float screenWidth  = getGuiWidth();
+        float screenHeight = getGuiHeight();
 
-        // 4 ряда клавиш (3 ряда цифр + нижний ряд)
-        int rows = NUM_ROWS.length + 1;
-        float totalHeight = rows * keyHeight + (rows + 1) * spacing + 20;
-        currentHeight = totalHeight;
+        int rows = NUM_ROWS.length + 1;                       // 4
+        float kbWidth  = 3 * KEY_WIDTH + 4 * KEY_SPACING;
 
-        // Фон
-        Quad bgQuad = new Quad(screenWidth, totalHeight);
+        // ============================================================
+        // ВЫСОТА ПАНЕЛИ:
+        //   rows * KEY_HEIGHT      — все 4 ряда кнопок,
+        //   (rows - 1) * SPACING   — зазоры МЕЖДУ рядами,
+        //   2 * PADDING_Y          — полоса сверху и снизу
+        //                            размером в одну кнопку.
+        // Раньше padding не было, и нижний ряд визуально прилипал
+        // к нижнему краю фона — теперь фон выше и вмещает всё.
+        // ============================================================
+        float kbHeight = rows * KEY_HEIGHT
+                + (rows - 1) * KEY_SPACING
+                + 2 * PADDING_Y;
+        currentHeight = kbHeight;
+
+        // X — к левому краю, Y — по центру экрана по вертикали
+        float anchorX = LEFT_MARGIN;
+        float anchorY = (screenHeight - kbHeight) / 2f;
+        if (anchorX < 5f) anchorX = 5f;
+        if (anchorY < 5f) anchorY = 5f;
+
+        System.out.println("[VirtualKeyboard] screenW=" + screenWidth
+                + " screenH=" + screenHeight
+                + " kbW=" + kbWidth + " kbH=" + kbHeight
+                + " anchorX=" + anchorX + " anchorY=" + anchorY);
+
+        keyboardNode.setLocalTranslation(anchorX, anchorY, 0);
+
+        // Фон панели
+        Quad bgQuad = new Quad(kbWidth, kbHeight);
         background = new Geometry("KeyboardBg", bgQuad);
         Material mat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
         mat.setColor("Color", new ColorRGBA(0.15f, 0.15f, 0.2f, 0.95f));
@@ -179,42 +217,30 @@ public class VirtualKeyboard {
         background.setLocalTranslation(0, 0, -0.1f);
         keyboardNode.attachChild(background);
 
-        float startY = totalHeight - keyHeight - spacing;
+        // Верхняя строка кнопок с учётом верхнего padding
+        float startY = kbHeight - PADDING_Y - KEY_HEIGHT;
 
-        // ============================================================
-        // ЦИФРОВЫЕ РЯДЫ (1-2-3, 4-5-6, 7-8-9)
-        // ============================================================
-
+        // Цифровые ряды
         for (int r = 0; r < NUM_ROWS.length; r++) {
-
-            float rowWidth = NUM_ROWS[r].length * keyWidth
-                    + (NUM_ROWS[r].length - 1) * spacing;
-            float startX = (screenWidth - rowWidth) / 2f;
+            float rowWidth = NUM_ROWS[r].length * KEY_WIDTH
+                    + (NUM_ROWS[r].length - 1) * KEY_SPACING;
+            float startX = (kbWidth - rowWidth) / 2f;
 
             for (int c = 0; c < NUM_ROWS[r].length; c++) {
-
                 String digit = NUM_ROWS[r][c];
-                Button btn = createDigitKey(digit, keyWidth, keyHeight);
-                btn.setLocalTranslation(
-                        startX + c * (keyWidth + spacing),
-                        startY,
-                        0.1f);
+                Button btn = createDigitKey(digit, KEY_WIDTH, KEY_HEIGHT);
+                btn.setLocalTranslation(startX + c * (KEY_WIDTH + KEY_SPACING), startY, 0.1f);
                 keyboardNode.attachChild(btn);
                 allButtons.add(btn);
             }
-
-            startY -= keyHeight + spacing;
+            startY -= KEY_HEIGHT + KEY_SPACING;
         }
 
-        // ============================================================
-        // НИЖНИЙ РЯД: ⌫ | 0 | OK
-        // ============================================================
+        // Нижний ряд: ⌫ | 0 | OK
+        float rowWidth = 3 * KEY_WIDTH + 2 * KEY_SPACING;
+        float startX = (kbWidth - rowWidth) / 2f;
 
-        float rowWidth = 3 * keyWidth + 2 * spacing;
-        float startX = (screenWidth - rowWidth) / 2f;
-
-        // Backspace
-        Button backBtn = createSpecialKey("⌫", keyWidth, keyHeight);
+        Button backBtn = createSpecialKey("⌫", KEY_WIDTH, KEY_HEIGHT);
         backBtn.setLocalTranslation(startX, startY, 0.1f);
         bindTouchAction(backBtn, () -> {
             if (activeField != null) {
@@ -228,25 +254,17 @@ public class VirtualKeyboard {
         keyboardNode.attachChild(backBtn);
         allButtons.add(backBtn);
 
-        // 0
-        Button zeroBtn = createDigitKey("0", keyWidth, keyHeight);
-        zeroBtn.setLocalTranslation(startX + keyWidth + spacing, startY, 0.1f);
+        Button zeroBtn = createDigitKey("0", KEY_WIDTH, KEY_HEIGHT);
+        zeroBtn.setLocalTranslation(startX + KEY_WIDTH + KEY_SPACING, startY, 0.1f);
         keyboardNode.attachChild(zeroBtn);
         allButtons.add(zeroBtn);
 
-        // OK (закрыть)
-        Button okBtn = createSpecialKey("OK", keyWidth, keyHeight);
-        okBtn.setLocalTranslation(startX + 2 * (keyWidth + spacing), startY, 0.1f);
-        bindTouchAction(okBtn, () -> hide());
+        Button okBtn = createSpecialKey("OK", KEY_WIDTH, KEY_HEIGHT);
+        okBtn.setLocalTranslation(startX + 2 * (KEY_WIDTH + KEY_SPACING), startY, 0.1f);
+        bindTouchAction(okBtn, this::hide);
         keyboardNode.attachChild(okBtn);
         allButtons.add(okBtn);
-
-        keyboardNode.setLocalTranslation(0, 0, 0);
     }
-
-    // ============================================================
-    // KEY FACTORIES
-    // ============================================================
 
     private Button createDigitKey(String label, float w, float h) {
         Button btn = new Button(label);
